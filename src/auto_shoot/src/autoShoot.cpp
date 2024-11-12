@@ -34,7 +34,7 @@ public:
     void saveFrame(const cv::Mat& frame) {
         // 如果 VideoWriter 还没有初始化，进行初始化
         if (!isInitialized) {
-            videoWriter.open("output_video.avi", 
+            videoWriter.open("/home/kezjo/output_video.avi", 
                              cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 
                              fps, 
                              cv::Size(frameWidth, frameHeight));
@@ -82,11 +82,10 @@ int MatSave(cv::Mat img) {
     return 0;
 }
 */
-
 std::vector<cv::Point> findCorners(const std::vector<cv::Point>& path) {
     std::vector<cv::Point> corners;
-    if (path.size() < 2) 
-        return corners;
+    // 如果路径少于两个点，不可能有拐点
+    if (path.size() < 2) return corners;
 
     // 遍历路径，查找拐点
     for (size_t i = 1; i < path.size() - 1; ++i) {
@@ -96,7 +95,8 @@ std::vector<cv::Point> findCorners(const std::vector<cv::Point>& path) {
         int dy2 = path[i + 1].y - path[i].y;
 
         // 检查方向是否发生变化
-        if ((dx1 != 0 && dy1 == 0 && dy2 != 0) || (dy1 != 0 && dx1 == 0 && dx2 != 0)){
+        if ((dx1 != 0 && dy1 == 0 && dy2 != 0) || 
+            (dy1 != 0 && dx1 == 0 && dx2 != 0)) {
             corners.push_back(path[i]);  // 当前点是拐点
         }
     }
@@ -139,6 +139,8 @@ public:
         return NaviMap;
     }
     std::vector<cv::Point> AStar(const cv::Point& start,const cv::Point& goal,cv::Mat map){//需要先对地图进行kernel=15的erode操作
+        /*TODO：navi在这里*/
+        /*A*具体实现*/
         //定义上下左右四个方向
         const std::vector<cv::Point> directions={
             cv::Point(0,1),cv::Point(1,0),cv::Point(0,-1),cv::Point(-1,0)
@@ -200,6 +202,7 @@ public:
         cv::circle(frame,cv::Point(x*10,y*10),3,cv::Scalar(0,255,0),-1);
         for(int i=0;i<NaviTarget.size();i++){
             cv::putText(frame,std::to_string(i+1),NaviTarget[i]*10,cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 1);
+            //cv::circle(frame,cv::Point(NaviTarget[i].x,NaviTarget[i].y)*10,3,cv::Scalar(0,255,0),-1);
         }
         cv::Mat flipped_frame;
         cv::flip(frame, flipped_frame, 0);
@@ -237,6 +240,7 @@ public:
     }
     void FindRectangles(){
         //先进行腐蚀，只留下目标区域,kernel_size=20,返回值为cvMat，不专门声明eroded_map,直接在底下调用
+        //二值化图像（假设占用值为255的区域为前景，其他为背景）
         cv::Mat binary_map;
         cv::threshold(this->erodeMap(20), binary_map, 254, 255, cv::THRESH_BINARY);
     
@@ -273,21 +277,25 @@ public:
         cv::waitKey(1);
     }
     std::vector<cv::Point> useNavi(cv::Point presentPoint){
+        //std::cout<<"present Point:"<<presentPoint<<std::endl;
         std::vector<std::vector<cv::Point>> Path;
         if(NaviTargetUse.size()<=0){
             NaviTargetUse=NaviTarget;
         }
         for(int i=0;i<NaviTargetUse.size();i++){
+            //std::cout<<"Navi State:"<<i<<std::endl;
             Path.push_back(AStar(presentPoint, NaviTargetUse[i], NaviMapUsed));
         }
         cv::Mat map_to_show;
         cv::cvtColor(map,map_to_show,cv::COLOR_GRAY2BGR);
         int minId=0;
         for(int i=1;i<Path.size();i++){
+            //std::cout<<"Judge state:"<<i<<" size:"<<Path[i].size()<<std::endl;
             if(Path[i].size()<Path[minId].size()){
                 minId=i;
             }
         }
+        // std::cout<<"minId:"<<minId<<std::endl;
         for(int i=0;i<Path[minId].size();i++){
             cv::circle(map_to_show,Path[minId][i]*10,1,cv::Scalar(0,0,255),-1);
         }
@@ -371,11 +379,13 @@ private:
             RCLCPP_ERROR(this->get_logger(), "Failed to decode image.");
             return;
         }
-
+        //MatSave(frame);
+        
         TargetFound=0;//默认未找到目标
         whetherShoot=false;
         
 		cv::Mat imgDil=ImgPrePro.Process(frame,5);//阈值化预处理
+		//cv::imshow("imgDil",imgDil);
 		DetectedLight=Cons.getContours(imgDil);
 		if(DetectedLight.size()>1){
 			std::vector<ArmorToPair> DetectedArmor=lp.PairProcess(DetectedLight,frame);//灯条配对
@@ -395,7 +405,6 @@ private:
                 emptyFrame=0;
 				
 				TargetFound=1;
-                onPath=0;
                 if(whetherLimit==1){
                     if(Target.getArmorInfo().center.x<=frame.cols/2+35 && Target.getArmorInfo().center.x>=frame.cols/2-35 && Target.getArmorInfo().center.y<=frame.rows/2+35 &&Target.getArmorInfo().center.x>=frame.rows/2-35)
                         whetherShoot=true;
@@ -446,9 +455,7 @@ private:
         std::string velocity="speed(x:"+std::to_string(real_linear_speed_x)+",y:"+std::to_string(real_linear_speed_y)+")";
         cv::putText(frame,velocity,cv::Point(10,frame.rows-30-4*textSize.height),cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 255), 1);
         if(TargetFound==0){
-            if(onPath==0){
-                emptyFrame++;
-            }
+            emptyFrame++;
         	Color=cv::Scalar(0,0,255);
         }
         else if(TargetFound==1 && whetherShoot==1){
@@ -468,7 +475,7 @@ private:
             cv::line(frame,cv::Point(frame.cols/2+2,frame.rows/2),cv::Point(frame.cols/2+10,frame.rows/2),Color,2);
             cv::line(frame,cv::Point(frame.cols/2-2,frame.rows/2),cv::Point(frame.cols/2-10,frame.rows/2),Color,2);
         }
-        //vs.saveFrame(frame);
+        vs.saveFrame(frame);
 		cv::imshow("Camera Image", frame);
         /******************************************/        
         int ret=cv::waitKey(1);
@@ -478,20 +485,20 @@ private:
         	else
         		whetherShoot=true;
         }
-        // else if(ret=='h'){
-        // 	if(TargetFound==1)
-        // 		TargetFound=0;
-        // 	else if(TargetFound==0)
-        // 		TargetFound=1;
-        // }
-        // else if(ret=='l')
-        // 	yaw+=5;
-        // else if(ret=='j')
-        // 	yaw-=5;
-        // else if(ret=='i')
-        // 	pitch+=5;
-        // else if(ret=='k')
-        // 	pitch-=5;
+        else if(ret=='h'){
+        	if(TargetFound==1)
+        		TargetFound=0;
+        	else if(TargetFound==0)
+        		TargetFound=1;
+        }
+        else if(ret=='l')
+        	yaw+=5;
+        else if(ret=='j')
+        	yaw-=5;
+        else if(ret=='i')
+        	pitch+=5;
+        else if(ret=='k')
+        	pitch-=5;
         else if(ret=='u'){
         	if(whetherShowUi==1)
         		whetherShowUi=0;
@@ -508,6 +515,7 @@ private:
             needNavi=1;
         }
         else if(ret=='1'){
+            std::cout<<"Shoot Mode Switch!"<<std::endl;
             if(whetherLimit==1)
                 whetherLimit=0;
             else
@@ -516,14 +524,13 @@ private:
         else if(ret=='e'){
             emptyFrame=120;
         }
+        	
+
 
         /********************发布你应该发布的角度**************************/
         if(emptyFrame>=90){
         	yaw+=9;
             pitch=0;
-            if(emptyFrame>=360){
-                needNavi=1;
-            }
         }
         auto send_data_msg = std::make_shared<tdt_interface::msg::SendData>();
         send_data_msg->pitch = pitch;
@@ -555,18 +562,19 @@ private:
                         target_x=Path[0].x;
                         target_y=Path[0].y;
                         Path.erase(Path.begin());
-                        onPath=1;
                     }
                     else{
                         v=0;
                         vx=0;
                         vy=0;
-                        onPath=0;
+                        //needNavi=1;
                     }
                 }
+                //<<"tx:"<<target_x<<" ty:"<<target_y<<std::endl;
                 if(target_x != -1 && target_y!=-1){
                     float dx=target_x-real_position_x;
                     float dy=target_y-real_position_y;
+                    //std::cout<<dx<<" "<<dy<<std::endl;
                     float TargetPointDistance =sqrt(dx * dx + dy * dy);
                     float direction_x=dx/TargetPointDistance;
                     float direction_y=dy/TargetPointDistance;
@@ -671,7 +679,6 @@ private:
             std::cout<<"Navi on"<<std::endl;
             Path=navi.useNavi(cv::Point(real_position_x,real_position_y));
             needNavi=0;
-            emptyFrame=120;
         }
         //RCLCPP_INFO(this->get_logger(), "Robot position: [x: %f, y: %f, z: %f]", msg->pose.position.x, msg->pose.position.y, msg->pose.position.z);
     }
@@ -721,7 +728,6 @@ private:
     Armor TargetThisFrame;
     int emptyFrame=120;
     int whetherLimit=1;
-    int onPath=0;
 
     Navigation navi;
 
@@ -739,4 +745,3 @@ int main(int argc, char *argv[])
     rclcpp::shutdown();
     return 0;
 }
-
